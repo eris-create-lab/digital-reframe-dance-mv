@@ -8,14 +8,17 @@ from fractions import Fraction
 
 def video_info(path):
     raw = subprocess.check_output([
-        "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,r_frame_rate,nb_frames,duration",
+        "ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames",
+        "-show_entries", "stream=width,height,r_frame_rate,nb_frames,nb_read_frames,duration",
         "-of", "json", path
     ], text=True)
     s = json.loads(raw)["streams"][0]
+    fps = Fraction(s["r_frame_rate"])
+    frame_value = s.get("nb_frames") or s.get("nb_read_frames")
+    frames = int(frame_value) if frame_value and frame_value != "N/A" else round(float(s["duration"]) * float(fps))
     return {
         "width": int(s["width"]), "height": int(s["height"]),
-        "fps": str(Fraction(s["r_frame_rate"])), "frames": int(s["nb_frames"]),
+        "fps": str(fps), "frames": frames,
         "duration": float(s["duration"])
     }
 
@@ -51,4 +54,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
