@@ -31,13 +31,13 @@ MP4を受け取ったら、解析、AIディレクション、JSON計画、編�
 `direct_video.py` は次を順番に実行する。
 
 - `analyze_video.py`: モデル不要の映像・音声解析と被写体追跡。
-- `generate_edit_plan.py`: 解析根拠からVersion 2.1演出JSONを生成。
+- `generate_edit_plan.py`: 解析根拠からVersion 2.5演出JSONを生成。
 - `render_reframe.py`: JSONだけを見てフレーム精度で編集。
 - `validate_output.py`: 解像度、FPS、総フレーム数、尺、音声を照合。
 
 ユーザーが演出を指定した場合だけ `direction.json` を調整する。指定がなければ自動案で最後まで進める。
 
-Version 2.1ではリフレーム、パン、ズーム、トラッキング、ビート同期に加え、Camera Shake、Flash、Exposure、Motion Blur、Speed Rampを使う。強いピークへ効果を分散し、同じ瞬間へ全部を重ねない。効果はVersion 2.0との差が一回の再生で分かる強度を下限とし、Camera Shakeは入力幅の約1.2%を基準に解像度へ追従させる。Speed Rampは区間内で加減速を相殺し、ショット終端で元の時間軸へ戻す。RGB Glitch、Color Grade、Accent Color、Bloom、Light LeakはVersion 2.5用として自動適用しない。
+Version 2.5ではVersion 2.1のリフレーム、カメラ、ビート同期、Camera Shake、Flash、Exposure、Motion Blur、Speed Rampを元の控えめな強度で維持し、RGB Glitch、Color Grade、Accent Color、Bloom、Light Leakを追加する。色と光は仕上げとして薄く使い、単体の効果へ視線を奪わせない。強いピークへ効果を分散し、同じ瞬間へ全部を重ねない。Speed Rampは区間内で加減速を相殺し、ショット終端で元の時間軸へ戻す。
 
 ## 編集判断
 
@@ -46,8 +46,9 @@ Version 2.1ではリフレーム、パン、ズーム、トラッキング、ビ
 - カット位置を時刻の等分で決めず、動作の開始、頂点、着地、視線、手足の横切りに合わせる。
 - 顔、腰上、胸元、足元、手元から、実際に意味がある箇所だけを選ぶ。
 - エフェクトを全画面へ常時掛けず、動作のアクセント前後2〜6フレームへ限定する。
-- Camera Shakeは最大18px、Motion Blurは最大4フレームに制限する。
-- 視覚レビューでは、Version 2.0との差が一回の再生で認識できることを確認する。
+- Camera Shakeは最大12px、Motion Blurは最大4フレームに制限する。
+- RGB Glitchは最大2px・2フレーム、BloomとLight Leakは最大6フレームに制限する。
+- 視覚レビューでは、色・光・グリッチがダンスやキャラクターより先に目へ入らないことを確認する。
 - Speed Rampは1区間だけを原則とし、総フレーム数、総尺、音声同期を変えない。
 - マスク合成では人物を鮮明に保ち、背景側へブラー、暗転、ライトスイープを適用する。
 - 仕上がりが騒がしい場合は、効果を弱める前にカット数を減らす。
