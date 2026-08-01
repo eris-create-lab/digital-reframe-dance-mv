@@ -44,9 +44,25 @@ def validate_plan(plan, width, height, frames):
             x, y, w, h = (int(crop[k]) for k in ("x", "y", "w", "h"))
             if min(x, y) < 0 or min(w, h) <= 0 or x + w > width or y + h > height:
                 raise ValueError(f"crop outside source bounds: {crop}")
+        effects = shot.get("effects", {})
+        shake = effects.get("camera_shake", {})
+        if shake and not 1 <= int(shake.get("amplitude", 0)) <= 12:
+            raise ValueError("camera shake amplitude must be 1..12 pixels")
+        blur = effects.get("motion_blur", {})
+        if blur and not 2 <= int(blur.get("frames", 0)) <= 4:
+            raise ValueError("motion blur must mix 2..4 frames")
+        exposure = effects.get("exposure", {})
+        if exposure and not -0.2 <= float(exposure.get("brightness", 0.0)) <= 0.2:
+            raise ValueError("exposure brightness must be between -0.2 and 0.2")
+        ramp = effects.get("speed_ramp", {})
+        if ramp:
+            ratio = float(ramp.get("first_segment_ratio", 0.0))
+            speed = float(ramp.get("first_speed", 0.0))
+            if not 0.15 <= ratio <= 0.75 or not 0.6 <= speed <= 1.8:
+                raise ValueError("speed ramp ratio or speed outside safe range")
 
 
-def build_filter(plan, width, height, frames, duration):
+def build_filter(plan, width, height, fps, frames, duration):
     grade = plan.get("grade", {})
     contrast = float(grade.get("contrast", 1.0))
     saturation = float(grade.get("saturation", 1.0))
@@ -62,6 +78,22 @@ def build_filter(plan, width, height, frames, duration):
         start, end = int(shot["start_frame"]), int(shot["end_frame"])
         length = end - start
         chain = f"[v{i}]trim=start_frame={start}:end_frame={end},setpts=PTS-STARTPTS"
+        effects = shot.get("effects", {})
+        ramp = effects.get("speed_ramp")
+        if ramp and length >= 8:
+            ratio = float(ramp.get("first_segment_ratio", 0.38))
+            first_speed = float(ramp.get("first_speed", 1.35))
+            pivot = min(length - 2, max(2, round(length * ratio)))
+            first_slope = 1.0 / first_speed
+            second_slope = (length - pivot * first_slope) / (length - pivot)
+            shot_duration = length / float(fps)
+            chain += (
+                f",setpts='if(lt(N,{pivot}),N*{first_slope:.10f},"
+                f"{pivot}*{first_slope:.10f}+(N-{pivot})*{second_slope:.10f})/{float(fps):.12f}/TB'"
+                f",fps=fps={float(fps):.12f}:start_time=0:round=near"
+                f",tpad=stop_mode=clone:stop_duration={shot_duration:.12f}"
+                f",trim=end_frame={length},setpts=PTS-STARTPTS"
+            )
         crop = shot.get("crop")
         if crop:
             x0, y0, cw, ch = (int(crop[k]) for k in ("x", "y", "w", "h"))
@@ -79,6 +111,38 @@ def build_filter(plan, width, height, frames, duration):
             chain += (
                 f",scale=w='trunc({width}*({zexpr})/2)*2':h='trunc({height}*({zexpr})/2)*2':eval=frame:flags=lanczos"
                 f",crop={width}:{height}:(iw-{width})/2:(ih-{height})/2"
+            )
+
+        shake = effects.get("camera_shake")
+        if shake:
+            amplitude = int(shake.get("amplitude", 4))
+            shake_frames = min(length, int(shake.get("frames", 6)))
+            frequency = float(shake.get("frequency", 1.9))
+            y_amplitude = max(1, round(amplitude * height / width))
+            chain += (
+                f",scale={width + 2 * amplitude}:{height + 2 * y_amplitude}:flags=lanczos"
+                f",crop={width}:{height}:"
+                f"x='{amplitude}+if(lt(n,{shake_frames}),{amplitude}*sin({frequency}*n),0)':"
+                f"y='{y_amplitude}+if(lt(n,{shake_frames}),{y_amplitude}*sin({frequency * 1.37:.6f}*n+0.7),0)'"
+            )
+
+        motion_blur = effects.get("motion_blur")
+        if motion_blur:
+            blur_frames = int(motion_blur.get("frames", 2))
+            sigma_x = min(2.0, max(0.1, float(motion_blur.get("sigma_x", 1.1))))
+            sigma_y = min(1.0, max(0.1, float(motion_blur.get("sigma_y", 0.25))))
+            chain += (
+                f",gblur=sigma={sigma_x}:sigmaV={sigma_y}:steps=1:"
+                f"enable='lt(n,{blur_frames})'"
+            )
+
+        exposure = effects.get("exposure")
+        if exposure:
+            brightness = float(exposure.get("brightness", 0.035))
+            exposure_frames = min(length, int(exposure.get("frames", 6)))
+            chain += (
+                f",eq=brightness='if(lt(n,{exposure_frames}),"
+                f"{brightness}*(1-n/{exposure_frames}),0)':eval=frame"
             )
 
         trans = shot.get("transition", {})
@@ -115,7 +179,7 @@ def main():
     plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
     width, height, fps, frames, duration = probe(src)
     validate_plan(plan, width, height, frames)
-    graph = build_filter(plan, width, height, frames, duration)
+    graph = build_filter(plan, width, height, fps, frames, duration)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as f:
