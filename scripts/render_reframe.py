@@ -46,8 +46,8 @@ def validate_plan(plan, width, height, frames):
                 raise ValueError(f"crop outside source bounds: {crop}")
         effects = shot.get("effects", {})
         shake = effects.get("camera_shake", {})
-        if shake and not 1 <= int(shake.get("amplitude", 0)) <= 18:
-            raise ValueError("camera shake amplitude must be 1..18 pixels")
+        if shake and not 1 <= int(shake.get("amplitude", 0)) <= 12:
+            raise ValueError("camera shake amplitude must be 1..12 pixels")
         blur = effects.get("motion_blur", {})
         if blur and not 2 <= int(blur.get("frames", 0)) <= 4:
             raise ValueError("motion blur duration must be 2..4 frames")
@@ -60,6 +60,22 @@ def validate_plan(plan, width, height, frames):
             speed = float(ramp.get("first_speed", 0.0))
             if not 0.15 <= ratio <= 0.75 or not 0.6 <= speed <= 1.8:
                 raise ValueError("speed ramp ratio or speed outside safe range")
+        rgb_glitch = effects.get("rgb_glitch", {})
+        if rgb_glitch:
+            if not 1 <= int(rgb_glitch.get("pixels", 0)) <= 2 or not 1 <= int(rgb_glitch.get("frames", 0)) <= 2:
+                raise ValueError("RGB glitch must stay within 1..2 pixels and 1..2 frames")
+        bloom = effects.get("bloom", {})
+        if bloom:
+            if not 1 <= int(bloom.get("frames", 0)) <= 6 or not 0.0 < float(bloom.get("opacity", 0.0)) <= 0.08:
+                raise ValueError("bloom must stay within 1..6 frames and opacity <= 0.08")
+            if not 1.0 <= float(bloom.get("sigma", 0.0)) <= 8.0:
+                raise ValueError("bloom sigma must be 1.0..8.0")
+        light_leak = effects.get("light_leak", {})
+        if light_leak:
+            if light_leak.get("side") not in {"left", "right"}:
+                raise ValueError("light leak side must be left or right")
+            if not 1 <= int(light_leak.get("frames", 0)) <= 6 or not 0.0 < float(light_leak.get("opacity", 0.0)) <= 0.06:
+                raise ValueError("light leak must stay within 1..6 frames and opacity <= 0.06")
 
 
 def build_filter(plan, width, height, fps, frames, duration):
@@ -68,9 +84,13 @@ def build_filter(plan, width, height, fps, frames, duration):
     saturation = float(grade.get("saturation", 1.0))
     gamma = float(grade.get("gamma", 1.0))
     unsharp = float(grade.get("unsharp", 0.0))
+    accent = plan.get("accent_color", {})
+    red_midtones = max(-0.05, min(0.05, float(accent.get("red_midtones", 0.0))))
+    blue_midtones = max(-0.05, min(0.05, float(accent.get("blue_midtones", 0.0))))
     shots = plan["shots"]
     lines = [
         f"[0:v]format=yuv420p,eq=contrast={contrast}:saturation={saturation}:gamma={gamma},"
+        f"colorbalance=rm={red_midtones}:bm={blue_midtones}:pl=1,"
         f"unsharp=5:5:{unsharp},split={len(shots)}" + "".join(f"[v{i}]" for i in range(len(shots))) + ";"
     ]
 
@@ -155,6 +175,36 @@ def build_filter(plan, width, height, fps, frames, duration):
         flash = float(trans.get("flash", 0.0))
         if flash:
             chain += f",eq=brightness='if(eq(n,0),{flash},if(eq(n,1),{flash*0.35},0))':eval=frame"
+
+        rgb_glitch = effects.get("rgb_glitch")
+        if rgb_glitch:
+            pixels = int(rgb_glitch.get("pixels", 1))
+            glitch_frames = min(length, int(rgb_glitch.get("frames", 1)))
+            chain += f",rgbashift=rh={pixels}:bh={-pixels}:enable='lt(n,{glitch_frames})'"
+
+        bloom = effects.get("bloom")
+        if bloom:
+            bloom_frames = min(length, int(bloom.get("frames", 5)))
+            bloom_sigma = float(bloom.get("sigma", 5.0))
+            bloom_opacity = float(bloom.get("opacity", 0.045))
+            chain += (
+                f",split[bloom_base{i}][bloom_src{i}];"
+                f"[bloom_src{i}]gblur=sigma={bloom_sigma}:steps=2[bloom_glow{i}];"
+                f"[bloom_base{i}][bloom_glow{i}]blend=all_mode=screen:all_opacity={bloom_opacity}:"
+                f"enable='lt(n,{bloom_frames})'"
+            )
+
+        light_leak = effects.get("light_leak")
+        if light_leak:
+            leak_frames = min(length, int(light_leak.get("frames", 5)))
+            leak_opacity = float(light_leak.get("opacity", 0.025))
+            leak_brightness = leak_opacity * 0.12
+            chain += (
+                f",colorbalance=rh={leak_opacity}:bh={-leak_opacity * 0.35}:pl=1:"
+                f"enable='lt(n,{leak_frames})'"
+                f",eq=brightness='if(lt(n,{leak_frames}),"
+                f"{leak_brightness}*(1-n/{leak_frames}),0)':eval=frame"
+            )
         chain += f",setsar=1[o{i}];"
         lines.append(chain)
 
