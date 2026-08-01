@@ -17,7 +17,8 @@ def probe(path):
     fps = Fraction(stream["r_frame_rate"])
     frame_value = stream.get("nb_frames") or stream.get("nb_read_frames")
     frames = int(frame_value) if frame_value and frame_value != "N/A" else round(float(stream["duration"]) * float(fps))
-    return int(stream["width"]), int(stream["height"]), fps, frames
+    duration = float(stream.get("duration") or frames / float(fps))
+    return int(stream["width"]), int(stream["height"]), fps, frames, duration
 
 
 def has_audio(path):
@@ -45,7 +46,7 @@ def validate_plan(plan, width, height, frames):
                 raise ValueError(f"crop outside source bounds: {crop}")
 
 
-def build_filter(plan, width, height):
+def build_filter(plan, width, height, frames, duration):
     grade = plan.get("grade", {})
     contrast = float(grade.get("contrast", 1.0))
     saturation = float(grade.get("saturation", 1.0))
@@ -94,7 +95,11 @@ def build_filter(plan, width, height):
         lines.append(chain)
 
     inputs = "".join(f"[o{i}]" for i in range(len(shots)))
-    lines.append(f"{inputs}concat=n={len(shots)}:v=1:a=0,format=yuv420p[outv]")
+    frame_interval = duration / frames
+    lines.append(
+        f"{inputs}concat=n={len(shots)}:v=1:a=0,"
+        f"setpts=N*{frame_interval:.12f}/TB,format=yuv420p[outv]"
+    )
     return "\n".join(lines)
 
 
@@ -108,9 +113,9 @@ def main():
 
     src, output = Path(args.input).resolve(), Path(args.output).resolve()
     plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
-    width, height, fps, frames = probe(src)
+    width, height, fps, frames, duration = probe(src)
     validate_plan(plan, width, height, frames)
-    graph = build_filter(plan, width, height)
+    graph = build_filter(plan, width, height, frames, duration)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as f:
@@ -123,10 +128,13 @@ def main():
     ]
     if has_audio(src):
         cmd += ["-map", "0:a:0", "-c:a", "copy"]
-    cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", str(args.crf), "-movflags", "+faststart", str(output)]
+    cmd += [
+        "-c:v", "libx264", "-preset", "medium", "-crf", str(args.crf),
+        "-fps_mode", "passthrough", "-movflags", "+faststart", str(output)
+    ]
     subprocess.run(cmd, check=True)
 
-    _, _, out_fps, out_frames = probe(output)
+    _, _, out_fps, out_frames, _ = probe(output)
     if out_fps != fps or out_frames != frames:
         raise RuntimeError(f"frame mismatch: input={frames}@{fps}, output={out_frames}@{out_fps}")
     print(output)
