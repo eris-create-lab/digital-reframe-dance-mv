@@ -1,10 +1,10 @@
 # Edit Plan Format
 
-Version 2.0の`direction.json`はAIディレクションとレンダリング計画を兼ねる。`render_reframe.py`は`shots`以下だけを実行し、入力動画の全フレームを隙間なく覆う。
+Version 2.1の`direction.json`はAIディレクションとレンダリング計画を兼ねる。`render_reframe.py`は`shots`以下だけを実行し、入力動画の全フレームを隙間なく覆う。
 
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "style": "dance_mv",
   "direction_style": "IMPACT",
   "bpm": 128,
@@ -40,7 +40,10 @@ Version 2.0の`direction.json`はAIディレクションとレンダリング計
       "crop": {"x": 80, "y": 25, "w": 560, "h": 980},
       "pan": {"x_end": 88, "y_end": 29},
       "zoom": {"start": 1.0, "end": 1.04},
-      "transition": {"blur_frames": 2, "flash": 0.10, "rgb_shift": 2}
+      "transition": {"flash": 0.075},
+      "effects": {
+        "exposure": {"brightness": 0.035, "frames": 6}
+      }
     },
     {
       "start_frame": 56,
@@ -53,7 +56,7 @@ Version 2.0の`direction.json`はAIディレクションとレンダリング計
 
 ## フィールド
 
-- `schema_version`: 計画形式。Version 2.0では`2.0`。
+- `schema_version`: 計画形式。Version 2.1では`2.1`。
 - `style`: 出力種別。現行は`dance_mv`。
 - `direction_style`: CLEAN、IMPACT、GRAPHIC、FASHION、LIVEの基調。
 - `bpm`: 音声解析値。音声がない場合は`null`。
@@ -68,6 +71,10 @@ Version 2.0の`direction.json`はAIディレクションとレンダリング計
 - `transition.blur_frames`: ショット頭だけに掛ける短いブラー。
 - `transition.flash`: ショット頭の露光。通常0.05〜0.15。
 - `transition.rgb_shift`: ショット頭のRGBずれピクセル数。通常1〜4。
+- `effects.camera_shake`: `amplitude`、`frames`、`frequency`で短いカメラ振動を指定する。
+- `effects.exposure`: `brightness`と`frames`で露出変化を減衰させる。
+- `effects.motion_blur`: `frames`、`sigma_x`、`sigma_y`で短い方向性ブラーを指定する。顔や耳を二重化するフレーム混合は使わない。
+- `effects.speed_ramp`: `first_segment_ratio`と`first_speed`で前半速度を指定する。後半速度は総尺が変わらないよう自動計算する。
 
 ## 制約
 
@@ -77,3 +84,5 @@ Version 2.0の`direction.json`はAIディレクションとレンダリング計
 - クロップを入力解像度内へ収める。
 - 極端なアップを避け、目、手、靴、耳の切断をコンタクトシートで確認する。
 - 秒数ではなくフレームで確定する。
+- Camera Shakeは1〜12px、Motion Blurは2〜4フレームに収める。
+- Speed Ramp後もショットの開始・終了フレームを変えない。
