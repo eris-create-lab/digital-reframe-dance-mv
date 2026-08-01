@@ -146,7 +146,7 @@ def build_plan(analysis):
         "editing_concept": concept,
         "timeline": timeline,
         "grade": {"contrast": 1.02, "saturation": 1.035, "gamma": 0.995, "unsharp": 0.0},
-        "accent_color": {"red_midtones": 0.006, "blue_midtones": 0.014},
+        "accent_color": {"red_gain": 1.006, "blue_gain": 1.014},
         "recipe": {
             "concept": style,
             "signature_techniques": ["tracking-reframe", "restrained-finish-v2.5"],
