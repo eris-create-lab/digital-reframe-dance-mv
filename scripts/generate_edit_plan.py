@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn analysis.json into a clearly visible Version 2.1 direction/edit plan."""
+"""Turn analysis.json into a restrained Version 2.5 direction/edit plan."""
 
 import argparse
 import json
@@ -68,7 +68,6 @@ def build_plan(analysis):
     meta, video, audio = analysis["metadata"], analysis["video"], analysis["audio"]
     fps, frames = float(meta["fps_float"]), int(meta["frames"])
     duration, width, height = float(meta["duration"]), int(meta["width"]), int(meta["height"])
-    shake_amplitude = max(4, min(18, round(width * 0.012)))
     events = choose_events(analysis)
     motion_level = video["camera_motion_level"]
     style = "IMPACT" if len(audio.get("peaks", [])) >= 3 or motion_level == "high" else "CLEAN"
@@ -103,13 +102,16 @@ def build_plan(analysis):
         effects = {}
         role = effect_roles.get(accent_index)
         if role == "flash_exposure":
-            transition["flash"] = 0.16
-            effects["exposure"] = {"brightness": 0.075, "frames": 8}
+            transition["flash"] = 0.075
+            effects["exposure"] = {"brightness": 0.035, "frames": 6}
+            effects["bloom"] = {"frames": 5, "sigma": 5.0, "opacity": 0.045}
         elif role == "shake_blur":
-            effects["camera_shake"] = {"amplitude": shake_amplitude, "frames": 9, "frequency": 1.75}
-            effects["motion_blur"] = {"frames": 4, "sigma_x": 1.8, "sigma_y": 0.35}
+            effects["camera_shake"] = {"amplitude": 4, "frames": 6, "frequency": 1.9}
+            effects["motion_blur"] = {"frames": 3, "sigma_x": 1.1, "sigma_y": 0.25}
+            effects["rgb_glitch"] = {"pixels": 1, "frames": 1}
         elif role == "speed_ramp":
-            effects["speed_ramp"] = {"first_segment_ratio": 0.42, "first_speed": 1.75}
+            effects["speed_ramp"] = {"first_segment_ratio": 0.38, "first_speed": 1.35}
+            effects["light_leak"] = {"side": "right", "frames": 5, "opacity": 0.025}
 
         shot = {
             "start_frame": start, "end_frame": end, "kind": kind,
@@ -137,16 +139,17 @@ def build_plan(analysis):
     if effect_roles:
         concept.append("強いピークへFlash、Shake、Motion Blur、Speed Rampを分散配置")
     return {
-        "schema_version": "2.1",
+        "schema_version": "2.5",
         "style": "dance_mv",
         "direction_style": style,
         "bpm": audio.get("bpm"),
         "editing_concept": concept,
         "timeline": timeline,
-        "grade": {"contrast": 1.0, "saturation": 1.0, "gamma": 1.0, "unsharp": 0.0},
+        "grade": {"contrast": 1.02, "saturation": 1.035, "gamma": 0.995, "unsharp": 0.0},
+        "accent_color": {"red_midtones": 0.006, "blue_midtones": 0.014},
         "recipe": {
             "concept": style,
-            "signature_techniques": ["tracking-reframe", "impact-effects-v2.1"],
+            "signature_techniques": ["tracking-reframe", "restrained-finish-v2.5"],
             "notes": "自動解析結果から生成。顔アップは視覚レビューで再調整可能。",
         },
         "shots": shots,
