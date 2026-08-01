@@ -10,11 +10,14 @@ from pathlib import Path
 def probe(path):
     raw = subprocess.check_output([
         "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,r_frame_rate,nb_frames",
+        "-count_frames", "-show_entries", "stream=width,height,r_frame_rate,nb_frames,nb_read_frames,duration",
         "-of", "json", str(path)
     ], text=True)
     stream = json.loads(raw)["streams"][0]
-    return int(stream["width"]), int(stream["height"]), Fraction(stream["r_frame_rate"]), int(stream["nb_frames"])
+    fps = Fraction(stream["r_frame_rate"])
+    frame_value = stream.get("nb_frames") or stream.get("nb_read_frames")
+    frames = int(frame_value) if frame_value and frame_value != "N/A" else round(float(stream["duration"]) * float(fps))
+    return int(stream["width"]), int(stream["height"]), fps, frames
 
 
 def has_audio(path):
@@ -131,4 +134,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
