@@ -1,15 +1,28 @@
 # Edit Plan Format
 
-`render_reframe.py` へ渡すJSONは、入力動画の全フレームを隙間なく覆う。
+Version 2.5の`direction.json`はAIディレクションとレンダリング計画を兼ねる。`render_reframe.py`はこのJSONだけを実行し、入力動画の全フレームを隙間なく覆う。
 
 ```json
 {
+  "schema_version": "2.5",
+  "style": "dance_mv",
+  "direction_style": "IMPACT",
+  "bpm": 128,
+  "editing_concept": [
+    "ビートと動作ピークに同期した短いリフレーム",
+    "全身ショットを主役として維持"
+  ],
+  "timeline": [
+    {"time": 0.0, "action": "full_body", "reason": "rest"},
+    {"time": 1.3333, "action": "waist_up", "reason": "audio_peak@1.417s"}
+  ],
   "grade": {
-    "contrast": 1.04,
-    "saturation": 1.06,
-    "gamma": 0.99,
-    "unsharp": 0.2
+    "contrast": 1.02,
+    "saturation": 1.035,
+    "gamma": 0.995,
+    "unsharp": 0.0
   },
+  "accent_color": {"red_gain": 1.006, "blue_gain": 1.014},
   "recipe": {
     "concept": "IMPACT",
     "signature_techniques": ["tracking-punch-in", "short-flash"],
@@ -28,7 +41,11 @@
       "crop": {"x": 80, "y": 25, "w": 560, "h": 980},
       "pan": {"x_end": 88, "y_end": 29},
       "zoom": {"start": 1.0, "end": 1.04},
-      "transition": {"blur_frames": 2, "flash": 0.10, "rgb_shift": 2}
+      "transition": {"flash": 0.075},
+      "effects": {
+        "exposure": {"brightness": 0.035, "frames": 6},
+        "bloom": {"frames": 5, "sigma": 5.0, "opacity": 0.045}
+      }
     },
     {
       "start_frame": 56,
@@ -41,6 +58,12 @@
 
 ## フィールド
 
+- `schema_version`: 計画形式。Version 2.5では`2.5`。
+- `style`: 出力種別。現行は`dance_mv`。
+- `direction_style`: CLEAN、IMPACT、GRAPHIC、FASHION、LIVEの基調。
+- `bpm`: 音声解析値。音声がない場合は`null`。
+- `editing_concept`: 人間が確認できる演出意図。
+- `timeline`: 秒単位の演出要約。レンダリングの正本は`shots`。
 - `start_frame`: 含む開始フレーム。
 - `end_frame`: 含まない終了フレーム。
 - `kind`: レシピ記録用。レンダリングには影響しない。
@@ -48,8 +71,16 @@
 - `pan`: ショット末尾のクロップ座標。省略時は固定。
 - `zoom`: ショット内の追加ズーム。通常1.00〜1.06に抑える。
 - `transition.blur_frames`: ショット頭だけに掛ける短いブラー。
-- `transition.flash`: ショット頭の露光。通常0.05〜0.15。
+- `transition.flash`: ショット頭の露光。通常0.08〜0.18。
 - `transition.rgb_shift`: ショット頭のRGBずれピクセル数。通常1〜4。
+- `effects.camera_shake`: `amplitude`、`frames`、`frequency`で短いカメラ振動を指定する。
+- `effects.exposure`: `brightness`と`frames`で露出変化を減衰させる。
+- `effects.motion_blur`: `frames`、`sigma_x`、`sigma_y`で短い方向性ブラーを指定する。顔や耳を二重化するフレーム混合は使わない。
+- `effects.speed_ramp`: `first_segment_ratio`と`first_speed`で前半速度を指定する。後半速度は総尺が変わらないよう自動計算する。
+- `accent_color`: 全編の赤・青チャンネル倍率。各値は0.95〜1.05に制限する。明度保持型の色調補正は白い肌へ色ノイズを生むため使わない。
+- `effects.rgb_glitch`: `pixels`と`frames`で短いRGB分離を指定する。
+- `effects.bloom`: `frames`、`sigma`、`opacity`で短いハイライト発光を指定する。
+- `effects.light_leak`: `side`、`frames`、`opacity`でハイライトへ短い暖色光を指定する。色帯は描かない。
 
 ## 制約
 
@@ -59,4 +90,6 @@
 - クロップを入力解像度内へ収める。
 - 極端なアップを避け、目、手、靴、耳の切断をコンタクトシートで確認する。
 - 秒数ではなくフレームで確定する。
-
+- Camera Shakeは1〜12px、Motion Blurは2〜4フレームに収める。
+- RGB Glitchは1〜2px・1〜2フレーム、BloomとLight Leakは1〜6フレームに収める。
+- Speed Ramp後もショットの開始・終了フレームを変えない。

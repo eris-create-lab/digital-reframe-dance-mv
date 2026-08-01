@@ -1,13 +1,13 @@
 interface:
-  display_name: ワンカット・ダンスMV編集
-  short_description: ワンカット素材を再生成せず多彩なダンスMVへ編集する
-  default_prompt: $digital-reframe-dance-mv を使って、このダンス動画を素材に合った演出のMVへ編集してください。
-  icon_small: assets/icon.svg
-  icon_large: assets/icon.svg
+  display_name: "ワンカット・ダンスMV編集"
+  short_description: "MP4を解析・演出・編集し、検証済みダンスMVを自動出力する"
+  default_prompt: "$digital-reframe-dance-mv を使って、このMP4を解析し、素材に合った演出のダンスMVへ全自動で編集してください。"
+  icon_small: "./assets/icon.svg"
+  icon_large: "./assets/icon.svg"
 policy:
   products:
-  - chatgpt
-  - codex
-  - api
-  - atlas
+  - "chatgpt"
+  - "codex"
+  - "api"
+  - "atlas"
   allow_implicit_invocation: true

@@ -10,11 +10,15 @@ from pathlib import Path
 def probe(path):
     raw = subprocess.check_output([
         "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,r_frame_rate,nb_frames",
+        "-count_frames", "-show_entries", "stream=width,height,r_frame_rate,nb_frames,nb_read_frames,duration",
         "-of", "json", str(path)
     ], text=True)
     stream = json.loads(raw)["streams"][0]
-    return int(stream["width"]), int(stream["height"]), Fraction(stream["r_frame_rate"]), int(stream["nb_frames"])
+    fps = Fraction(stream["r_frame_rate"])
+    frame_value = stream.get("nb_frames") or stream.get("nb_read_frames")
+    frames = int(frame_value) if frame_value and frame_value != "N/A" else round(float(stream["duration"]) * float(fps))
+    duration = float(stream.get("duration") or frames / float(fps))
+    return int(stream["width"]), int(stream["height"]), fps, frames, duration
 
 
 def has_audio(path):
@@ -40,17 +44,55 @@ def validate_plan(plan, width, height, frames):
             x, y, w, h = (int(crop[k]) for k in ("x", "y", "w", "h"))
             if min(x, y) < 0 or min(w, h) <= 0 or x + w > width or y + h > height:
                 raise ValueError(f"crop outside source bounds: {crop}")
+        effects = shot.get("effects", {})
+        shake = effects.get("camera_shake", {})
+        if shake and not 1 <= int(shake.get("amplitude", 0)) <= 12:
+            raise ValueError("camera shake amplitude must be 1..12 pixels")
+        blur = effects.get("motion_blur", {})
+        if blur and not 2 <= int(blur.get("frames", 0)) <= 4:
+            raise ValueError("motion blur duration must be 2..4 frames")
+        exposure = effects.get("exposure", {})
+        if exposure and not -0.2 <= float(exposure.get("brightness", 0.0)) <= 0.2:
+            raise ValueError("exposure brightness must be between -0.2 and 0.2")
+        ramp = effects.get("speed_ramp", {})
+        if ramp:
+            ratio = float(ramp.get("first_segment_ratio", 0.0))
+            speed = float(ramp.get("first_speed", 0.0))
+            if not 0.15 <= ratio <= 0.75 or not 0.6 <= speed <= 1.8:
+                raise ValueError("speed ramp ratio or speed outside safe range")
+        rgb_glitch = effects.get("rgb_glitch", {})
+        if rgb_glitch:
+            if not 1 <= int(rgb_glitch.get("pixels", 0)) <= 2 or not 1 <= int(rgb_glitch.get("frames", 0)) <= 2:
+                raise ValueError("RGB glitch must stay within 1..2 pixels and 1..2 frames")
+        bloom = effects.get("bloom", {})
+        if bloom:
+            if not 1 <= int(bloom.get("frames", 0)) <= 6 or not 0.0 < float(bloom.get("opacity", 0.0)) <= 0.08:
+                raise ValueError("bloom must stay within 1..6 frames and opacity <= 0.08")
+            if not 1.0 <= float(bloom.get("sigma", 0.0)) <= 8.0:
+                raise ValueError("bloom sigma must be 1.0..8.0")
+        light_leak = effects.get("light_leak", {})
+        if light_leak:
+            if light_leak.get("side") not in {"left", "right"}:
+                raise ValueError("light leak side must be left or right")
+            if not 1 <= int(light_leak.get("frames", 0)) <= 6 or not 0.0 < float(light_leak.get("opacity", 0.0)) <= 0.06:
+                raise ValueError("light leak must stay within 1..6 frames and opacity <= 0.06")
 
 
-def build_filter(plan, width, height):
+def build_filter(plan, width, height, fps, frames, duration):
     grade = plan.get("grade", {})
     contrast = float(grade.get("contrast", 1.0))
     saturation = float(grade.get("saturation", 1.0))
     gamma = float(grade.get("gamma", 1.0))
     unsharp = float(grade.get("unsharp", 0.0))
+    accent = plan.get("accent_color", {})
+    red_gain = float(accent.get("red_gain", 1.0 + float(accent.get("red_midtones", 0.0))))
+    blue_gain = float(accent.get("blue_gain", 1.0 + float(accent.get("blue_midtones", 0.0))))
+    red_gain = max(0.95, min(1.05, red_gain))
+    blue_gain = max(0.95, min(1.05, blue_gain))
     shots = plan["shots"]
     lines = [
         f"[0:v]format=yuv420p,eq=contrast={contrast}:saturation={saturation}:gamma={gamma},"
+        f"colorchannelmixer=rr={red_gain}:bb={blue_gain},"
         f"unsharp=5:5:{unsharp},split={len(shots)}" + "".join(f"[v{i}]" for i in range(len(shots))) + ";"
     ]
 
@@ -58,6 +100,22 @@ def build_filter(plan, width, height):
         start, end = int(shot["start_frame"]), int(shot["end_frame"])
         length = end - start
         chain = f"[v{i}]trim=start_frame={start}:end_frame={end},setpts=PTS-STARTPTS"
+        effects = shot.get("effects", {})
+        ramp = effects.get("speed_ramp")
+        if ramp and length >= 8:
+            ratio = float(ramp.get("first_segment_ratio", 0.38))
+            first_speed = float(ramp.get("first_speed", 1.35))
+            pivot = min(length - 2, max(2, round(length * ratio)))
+            first_slope = 1.0 / first_speed
+            second_slope = (length - pivot * first_slope) / (length - pivot)
+            shot_duration = length / float(fps)
+            chain += (
+                f",setpts='if(lt(N,{pivot}),N*{first_slope:.10f},"
+                f"{pivot}*{first_slope:.10f}+(N-{pivot})*{second_slope:.10f})/{float(fps):.12f}/TB'"
+                f",fps=fps={float(fps):.12f}:start_time=0:round=near"
+                f",tpad=stop_mode=clone:stop_duration={shot_duration:.12f}"
+                f",trim=end_frame={length},setpts=PTS-STARTPTS"
+            )
         crop = shot.get("crop")
         if crop:
             x0, y0, cw, ch = (int(crop[k]) for k in ("x", "y", "w", "h"))
@@ -77,6 +135,38 @@ def build_filter(plan, width, height):
                 f",crop={width}:{height}:(iw-{width})/2:(ih-{height})/2"
             )
 
+        shake = effects.get("camera_shake")
+        if shake:
+            amplitude = int(shake.get("amplitude", 4))
+            shake_frames = min(length, int(shake.get("frames", 6)))
+            frequency = float(shake.get("frequency", 1.9))
+            y_amplitude = max(1, round(amplitude * height / width))
+            chain += (
+                f",scale={width + 2 * amplitude}:{height + 2 * y_amplitude}:flags=lanczos"
+                f",crop={width}:{height}:"
+                f"x='{amplitude}+if(lt(n,{shake_frames}),{amplitude}*sin({frequency}*n),0)':"
+                f"y='{y_amplitude}+if(lt(n,{shake_frames}),{y_amplitude}*sin({frequency * 1.37:.6f}*n+0.7),0)'"
+            )
+
+        motion_blur = effects.get("motion_blur")
+        if motion_blur:
+            blur_frames = int(motion_blur.get("frames", 2))
+            sigma_x = min(2.0, max(0.1, float(motion_blur.get("sigma_x", 1.1))))
+            sigma_y = min(1.0, max(0.1, float(motion_blur.get("sigma_y", 0.25))))
+            chain += (
+                f",gblur=sigma={sigma_x}:sigmaV={sigma_y}:steps=1:"
+                f"enable='lt(n,{blur_frames})'"
+            )
+
+        exposure = effects.get("exposure")
+        if exposure:
+            brightness = float(exposure.get("brightness", 0.035))
+            exposure_frames = min(length, int(exposure.get("frames", 6)))
+            chain += (
+                f",eq=brightness='if(lt(n,{exposure_frames}),"
+                f"{brightness}*(1-n/{exposure_frames}),0)':eval=frame"
+            )
+
         trans = shot.get("transition", {})
         blur_frames = int(trans.get("blur_frames", 0))
         if blur_frames:
@@ -87,11 +177,47 @@ def build_filter(plan, width, height):
         flash = float(trans.get("flash", 0.0))
         if flash:
             chain += f",eq=brightness='if(eq(n,0),{flash},if(eq(n,1),{flash*0.35},0))':eval=frame"
+
+        rgb_glitch = effects.get("rgb_glitch")
+        if rgb_glitch:
+            pixels = int(rgb_glitch.get("pixels", 1))
+            glitch_frames = min(length, int(rgb_glitch.get("frames", 1)))
+            chain += f",rgbashift=rh={pixels}:bh={-pixels}:enable='lt(n,{glitch_frames})'"
+
+        bloom = effects.get("bloom")
+        if bloom:
+            bloom_frames = min(length, int(bloom.get("frames", 5)))
+            bloom_sigma = float(bloom.get("sigma", 5.0))
+            bloom_opacity = float(bloom.get("opacity", 0.045))
+            chain += (
+                f",split[bloom_base{i}][bloom_src{i}];"
+                f"[bloom_src{i}]gblur=sigma={bloom_sigma}:steps=2[bloom_glow{i}];"
+                f"[bloom_base{i}][bloom_glow{i}]blend=all_mode=screen:all_opacity={bloom_opacity}:"
+                f"enable='lt(n,{bloom_frames})'"
+            )
+
+        light_leak = effects.get("light_leak")
+        if light_leak:
+            leak_frames = min(length, int(light_leak.get("frames", 5)))
+            leak_opacity = float(light_leak.get("opacity", 0.025))
+            leak_brightness = leak_opacity * 0.12
+            leak_red_gain = 1.0 + leak_opacity * 0.48
+            leak_blue_gain = 1.0 - leak_opacity * 0.24
+            chain += (
+                f",colorchannelmixer=rr={leak_red_gain}:bb={leak_blue_gain}:"
+                f"enable='lt(n,{leak_frames})'"
+                f",eq=brightness='if(lt(n,{leak_frames}),"
+                f"{leak_brightness}*(1-n/{leak_frames}),0)':eval=frame"
+            )
         chain += f",setsar=1[o{i}];"
         lines.append(chain)
 
     inputs = "".join(f"[o{i}]" for i in range(len(shots)))
-    lines.append(f"{inputs}concat=n={len(shots)}:v=1:a=0,format=yuv420p[outv]")
+    frame_interval = duration / frames
+    lines.append(
+        f"{inputs}concat=n={len(shots)}:v=1:a=0,"
+        f"setpts=N*{frame_interval:.12f}/TB,format=yuv420p[outv]"
+    )
     return "\n".join(lines)
 
 
@@ -105,9 +231,9 @@ def main():
 
     src, output = Path(args.input).resolve(), Path(args.output).resolve()
     plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
-    width, height, fps, frames = probe(src)
+    width, height, fps, frames, duration = probe(src)
     validate_plan(plan, width, height, frames)
-    graph = build_filter(plan, width, height)
+    graph = build_filter(plan, width, height, fps, frames, duration)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", suffix=".txt", encoding="utf-8", delete=False) as f:
@@ -120,10 +246,13 @@ def main():
     ]
     if has_audio(src):
         cmd += ["-map", "0:a:0", "-c:a", "copy"]
-    cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", str(args.crf), "-movflags", "+faststart", str(output)]
+    cmd += [
+        "-c:v", "libx264", "-preset", "medium", "-crf", str(args.crf),
+        "-fps_mode", "passthrough", "-movflags", "+faststart", str(output)
+    ]
     subprocess.run(cmd, check=True)
 
-    _, _, out_fps, out_frames = probe(output)
+    _, _, out_fps, out_frames, _ = probe(output)
     if out_fps != fps or out_frames != frames:
         raise RuntimeError(f"frame mismatch: input={frames}@{fps}, output={out_frames}@{out_fps}")
     print(output)
@@ -131,4 +260,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
