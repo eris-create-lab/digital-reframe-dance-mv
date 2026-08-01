@@ -1,13 +1,13 @@
 ---
 name: digital-reframe-dance-mv
-description: Transform a short single-camera dance video into a polished multi-shot-style MV using only digital reframing, editorial cuts, tracking, color, and optional masked compositing while preserving the original character, choreography, camera viewpoint, timeline, and audio sync. Use for requests such as ワンカット動画をMV編集, ダンス動画へ顔・足元・手元カットを追加, 固定カメラ映像を複数カメラ風に編集, 元動画を再生成せずプロっぽく加工, or creating an original-vs-edited comparison video.
+description: Automatically transform an uploaded single-camera dance MP4 into a polished multi-shot-style MV by analyzing video and music, directing the edit, generating a JSON plan, rendering digital reframes and tracking, and validating the final MP4 while preserving character identity, choreography, timeline, and audio sync. Use for requests such as MP4を投げるだけでMV化, ワンカット動画を自動編集, ダンス動画へ顔・腰上・バストアップを追加, 固定カメラ映像を複数カメラ風に編集, or creating an original-vs-edited comparison video.
 ---
 
 # Digital Reframe Dance MV
 
 ## 目的
 
-短いワンカット動画を、存在しない映像を生成せず、素材の動きに合ったMVへ編集する。毎回同じテンプレートを当てず、素材から演出方針を決める。
+MP4を受け取ったら、解析、AIディレクション、JSON計画、編集、検証まで自動で完了する。存在しない映像を生成せず、素材から演出方針を決める。ユーザーへ編集操作や設定を求めない。
 
 ## 絶対条件
 
@@ -21,15 +21,23 @@ description: Transform a short single-camera dance video into a polished multi-s
 
 ## ワークフロー
 
-1. `scripts/probe_video.py` でメタデータ、コンタクトシート、波形を作る。
-2. 動きの密度、着地、手足の軌道、表情、元カメラの寄り引き、背景、音のアクセントを読む。
-3. [editing-grammar.md](references/editing-grammar.md) を読み、内部で異なる3案を作って最適な1案を選ぶ。
-4. 特徴的な技法を1本につき原則2種類まで選ぶ。前回の編集レシピがあれば同じ組み合わせを避ける。
-5. [plan-format.md](references/plan-format.md) に従ってフレーム単位の編集プランを作る。
-6. 基本の切り抜き、追従、ズーム、フラッシュ、RGBずれは `scripts/render_reframe.py` でレンダリングする。
-7. 人物マスク合成は、数フレームで輪郭を確認してから使う。不安定なら背景を広く残すフェザーマスクか通常編集へ戻す。
-8. `scripts/validate_output.py` で解像度、fps、総フレーム数、尺、音声を検証する。不一致を残したまま納品しない。
-9. 必要なら `scripts/make_comparison.py` で元動画と編集版の順次再生比較を作る。
+1. 入力MP4ごとに作業ディレクトリを用意する。
+2. `scripts/direct_video.py INPUT.mp4 OUTPUT.mp4 --work-dir WORK` を実行する。
+3. `analysis.json` で解像度、FPS、尺、シーン変化、動き、被写体追跡、BPM、ビート、音量ピーク、サビ候補を確認する。
+4. `direction.json` で素材根拠、演出方針、タイムライン、クロップが妥当か確認する。詳しい形式は [plan-format.md](references/plan-format.md) を読む。
+5. 自動生成された`contact.jpg`を見て、顔・手・靴の切断を視覚確認する。危険なアップは全身か腰上へ戻して再レンダリングする。
+6. `validation.json` の全項目が真であることを確認し、完成MP4を返す。不一致を残したまま納品しない。
+
+`direct_video.py` は次を順番に実行する。
+
+- `analyze_video.py`: モデル不要の映像・音声解析と被写体追跡。
+- `generate_edit_plan.py`: 解析根拠からVersion 2.0演出JSONを生成。
+- `render_reframe.py`: JSONだけを見てフレーム精度で編集。
+- `validate_output.py`: 解像度、FPS、総フレーム数、尺、音声を照合。
+
+ユーザーが演出を指定した場合だけ `direction.json` を調整する。指定がなければ自動案で最後まで進める。
+
+Version 2.0の自動計画はリフレーム、パン、ズーム、トラッキング、ビート同期だけを使う。Flash、Camera Shake、Exposure、Motion Blur、Speed Ramp、RGB Glitch、Color Grade、Bloom、Light Leakは後続バージョン用として自動適用しない。
 
 ## 編集判断
 
@@ -59,6 +67,9 @@ description: Transform a short single-camera dance video into a polished multi-s
 
 ## 付属スクリプト
 
+- `direct_video.py`: MP4入力から検証済みMP4出力までを一気通貫で実行する。
+- `analyze_video.py`: 映像、動き、被写体位置、BPM、ビート、ピーク、サビ候補を解析する。
+- `generate_edit_plan.py`: 解析JSONからAIディレクションと編集計画を生成する。
 - `probe_video.py`: 素材確認用メタデータ、コンタクトシート、波形を生成する。
 - `render_reframe.py`: JSONプランからフレーム精度でデジタルリフレーミングする。
 - `validate_output.py`: 元動画と編集版の技術的一致を検証する。
