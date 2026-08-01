@@ -40,9 +40,9 @@ Version 2.1の`direction.json`はAIディレクションとレンダリング計
       "crop": {"x": 80, "y": 25, "w": 560, "h": 980},
       "pan": {"x_end": 88, "y_end": 29},
       "zoom": {"start": 1.0, "end": 1.04},
-      "transition": {"flash": 0.075},
+      "transition": {"flash": 0.16},
       "effects": {
-        "exposure": {"brightness": 0.035, "frames": 6}
+        "exposure": {"brightness": 0.075, "frames": 8}
       }
     },
     {
@@ -69,7 +69,7 @@ Version 2.1の`direction.json`はAIディレクションとレンダリング計
 - `pan`: ショット末尾のクロップ座標。省略時は固定。
 - `zoom`: ショット内の追加ズーム。通常1.00〜1.06に抑える。
 - `transition.blur_frames`: ショット頭だけに掛ける短いブラー。
-- `transition.flash`: ショット頭の露光。通常0.05〜0.15。
+- `transition.flash`: ショット頭の露光。通常0.08〜0.18。
 - `transition.rgb_shift`: ショット頭のRGBずれピクセル数。通常1〜4。
 - `effects.camera_shake`: `amplitude`、`frames`、`frequency`で短いカメラ振動を指定する。
 - `effects.exposure`: `brightness`と`frames`で露出変化を減衰させる。
@@ -84,5 +84,5 @@ Version 2.1の`direction.json`はAIディレクションとレンダリング計
 - クロップを入力解像度内へ収める。
 - 極端なアップを避け、目、手、靴、耳の切断をコンタクトシートで確認する。
 - 秒数ではなくフレームで確定する。
-- Camera Shakeは1〜12px、Motion Blurは2〜4フレームに収める。
+- Camera Shakeは入力幅の約1.2%を基準として1〜18px、Motion Blurは2〜4フレームに収める。
 - Speed Ramp後もショットの開始・終了フレームを変えない。
