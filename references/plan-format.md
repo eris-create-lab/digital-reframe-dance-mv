@@ -1,9 +1,21 @@
 # Edit Plan Format
 
-`render_reframe.py` へ渡すJSONは、入力動画の全フレームを隙間なく覆う。
+Version 2.0の`direction.json`はAIディレクションとレンダリング計画を兼ねる。`render_reframe.py`は`shots`以下だけを実行し、入力動画の全フレームを隙間なく覆う。
 
 ```json
 {
+  "schema_version": "2.0",
+  "style": "dance_mv",
+  "direction_style": "IMPACT",
+  "bpm": 128,
+  "editing_concept": [
+    "ビートと動作ピークに同期した短いリフレーム",
+    "全身ショットを主役として維持"
+  ],
+  "timeline": [
+    {"time": 0.0, "action": "full_body", "reason": "rest"},
+    {"time": 1.3333, "action": "waist_up", "reason": "audio_peak@1.417s"}
+  ],
   "grade": {
     "contrast": 1.04,
     "saturation": 1.06,
@@ -41,6 +53,12 @@
 
 ## フィールド
 
+- `schema_version`: 計画形式。Version 2.0では`2.0`。
+- `style`: 出力種別。現行は`dance_mv`。
+- `direction_style`: CLEAN、IMPACT、GRAPHIC、FASHION、LIVEの基調。
+- `bpm`: 音声解析値。音声がない場合は`null`。
+- `editing_concept`: 人間が確認できる演出意図。
+- `timeline`: 秒単位の演出要約。レンダリングの正本は`shots`。
 - `start_frame`: 含む開始フレーム。
 - `end_frame`: 含まない終了フレーム。
 - `kind`: レシピ記録用。レンダリングには影響しない。
@@ -59,4 +77,3 @@
 - クロップを入力解像度内へ収める。
 - 極端なアップを避け、目、手、靴、耳の切断をコンタクトシートで確認する。
 - 秒数ではなくフレームで確定する。
-
