@@ -22,7 +22,7 @@ Version 2.5の`direction.json`はAIディレクションとレンダリング計
     "gamma": 0.995,
     "unsharp": 0.0
   },
-  "accent_color": {"red_midtones": 0.006, "blue_midtones": 0.014},
+  "accent_color": {"red_gain": 1.006, "blue_gain": 1.014},
   "recipe": {
     "concept": "IMPACT",
     "signature_techniques": ["tracking-punch-in", "short-flash"],
@@ -77,7 +77,7 @@ Version 2.5の`direction.json`はAIディレクションとレンダリング計
 - `effects.exposure`: `brightness`と`frames`で露出変化を減衰させる。
 - `effects.motion_blur`: `frames`、`sigma_x`、`sigma_y`で短い方向性ブラーを指定する。顔や耳を二重化するフレーム混合は使わない。
 - `effects.speed_ramp`: `first_segment_ratio`と`first_speed`で前半速度を指定する。後半速度は総尺が変わらないよう自動計算する。
-- `accent_color`: 全編の中間調へ加える赤・青成分。各値は-0.05〜0.05に制限する。
+- `accent_color`: 全編の赤・青チャンネル倍率。各値は0.95〜1.05に制限する。明度保持型の色調補正は白い肌へ色ノイズを生むため使わない。
 - `effects.rgb_glitch`: `pixels`と`frames`で短いRGB分離を指定する。
 - `effects.bloom`: `frames`、`sigma`、`opacity`で短いハイライト発光を指定する。
 - `effects.light_leak`: `side`、`frames`、`opacity`でハイライトへ短い暖色光を指定する。色帯は描かない。
