@@ -46,11 +46,11 @@ def validate_plan(plan, width, height, frames):
                 raise ValueError(f"crop outside source bounds: {crop}")
         effects = shot.get("effects", {})
         shake = effects.get("camera_shake", {})
-        if shake and not 1 <= int(shake.get("amplitude", 0)) <= 12:
-            raise ValueError("camera shake amplitude must be 1..12 pixels")
+        if shake and not 1 <= int(shake.get("amplitude", 0)) <= 18:
+            raise ValueError("camera shake amplitude must be 1..18 pixels")
         blur = effects.get("motion_blur", {})
         if blur and not 2 <= int(blur.get("frames", 0)) <= 4:
-            raise ValueError("motion blur must mix 2..4 frames")
+            raise ValueError("motion blur duration must be 2..4 frames")
         exposure = effects.get("exposure", {})
         if exposure and not -0.2 <= float(exposure.get("brightness", 0.0)) <= 0.2:
             raise ValueError("exposure brightness must be between -0.2 and 0.2")
