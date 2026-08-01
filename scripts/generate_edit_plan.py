@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn analysis.json into a conservative Version 2.0 direction/edit plan."""
+"""Turn analysis.json into a conservative Version 2.1 direction/edit plan."""
 
 import argparse
 import json
@@ -81,20 +81,42 @@ def build_plan(analysis):
             continue
         accents.append((start, end, kinds[i % len(kinds)], time, source, strength))
 
+    ranked = sorted(range(len(accents)), key=lambda i: accents[i][5], reverse=True)
+    effect_roles = {}
+    if style == "IMPACT" and ranked:
+        effect_roles[ranked[0]] = "flash_exposure"
+    if style == "IMPACT" and len(ranked) >= 2:
+        effect_roles[ranked[1]] = "shake_blur"
+    if style == "IMPACT" and len(ranked) >= 3:
+        effect_roles[ranked[2]] = "speed_ramp"
+
     shots, cursor = [], 0
-    for start, end, kind, time, source, strength in accents:
+    for accent_index, (start, end, kind, time, source, strength) in enumerate(accents):
         if start > cursor:
             shots.append({"start_frame": cursor, "end_frame": start, "kind": "full_body"})
         c0 = center_at(video["subject_track"], start / fps)
         c1 = center_at(video["subject_track"], max(start / fps, (end - 1) / fps))
         crop = crop_for(kind, c0, width, height)
         end_crop = crop_for(kind, c1, width, height)
+        transition = {}
+        effects = {}
+        role = effect_roles.get(accent_index)
+        if role == "flash_exposure":
+            transition["flash"] = 0.075
+            effects["exposure"] = {"brightness": 0.035, "frames": 6}
+        elif role == "shake_blur":
+            effects["camera_shake"] = {"amplitude": 4, "frames": 6, "frequency": 1.9}
+            effects["motion_blur"] = {"frames": 3, "sigma_x": 1.1, "sigma_y": 0.25}
+        elif role == "speed_ramp":
+            effects["speed_ramp"] = {"first_segment_ratio": 0.38, "first_speed": 1.35}
+
         shot = {
             "start_frame": start, "end_frame": end, "kind": kind,
             "crop": crop,
             "pan": {"x_end": end_crop["x"], "y_end": end_crop["y"]},
             "zoom": {"start": 1.0, "end": 1.035},
-            "transition": {},
+            "transition": transition,
+            "effects": effects,
             "reason": f"{source}@{time:.3f}s",
         }
         shots.append(shot)
@@ -106,9 +128,15 @@ def build_plan(analysis):
         {"time": round(s["start_frame"] / fps, 4), "action": s["kind"], "reason": s.get("reason", "rest")}
         for s in shots
     ]
-    concept = ["ビートと動作ピークに同期した短いリフレーム", "全身ショットを主役として維持", "被写体を緩やかに追従"]
+    concept = [
+        "ビートと動作ピークに同期した短いリフレーム",
+        "全身ショットを主役として維持",
+        "被写体を緩やかに追従",
+    ]
+    if effect_roles:
+        concept.append("強いピークへFlash、Shake、Motion Blur、Speed Rampを分散配置")
     return {
-        "schema_version": "2.0",
+        "schema_version": "2.1",
         "style": "dance_mv",
         "direction_style": style,
         "bpm": audio.get("bpm"),
@@ -117,7 +145,7 @@ def build_plan(analysis):
         "grade": {"contrast": 1.0, "saturation": 1.0, "gamma": 1.0, "unsharp": 0.0},
         "recipe": {
             "concept": style,
-            "signature_techniques": ["tracking-reframe", "beat-synced-punch-in"],
+            "signature_techniques": ["tracking-reframe", "impact-effects-v2.1"],
             "notes": "自動解析結果から生成。顔アップは視覚レビューで再調整可能。",
         },
         "shots": shots,
