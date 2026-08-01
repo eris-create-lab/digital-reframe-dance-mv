@@ -85,12 +85,14 @@ def build_filter(plan, width, height, fps, frames, duration):
     gamma = float(grade.get("gamma", 1.0))
     unsharp = float(grade.get("unsharp", 0.0))
     accent = plan.get("accent_color", {})
-    red_midtones = max(-0.05, min(0.05, float(accent.get("red_midtones", 0.0))))
-    blue_midtones = max(-0.05, min(0.05, float(accent.get("blue_midtones", 0.0))))
+    red_gain = float(accent.get("red_gain", 1.0 + float(accent.get("red_midtones", 0.0))))
+    blue_gain = float(accent.get("blue_gain", 1.0 + float(accent.get("blue_midtones", 0.0))))
+    red_gain = max(0.95, min(1.05, red_gain))
+    blue_gain = max(0.95, min(1.05, blue_gain))
     shots = plan["shots"]
     lines = [
         f"[0:v]format=yuv420p,eq=contrast={contrast}:saturation={saturation}:gamma={gamma},"
-        f"colorbalance=rm={red_midtones}:bm={blue_midtones}:pl=1,"
+        f"colorchannelmixer=rr={red_gain}:bb={blue_gain},"
         f"unsharp=5:5:{unsharp},split={len(shots)}" + "".join(f"[v{i}]" for i in range(len(shots))) + ";"
     ]
 
@@ -199,8 +201,10 @@ def build_filter(plan, width, height, fps, frames, duration):
             leak_frames = min(length, int(light_leak.get("frames", 5)))
             leak_opacity = float(light_leak.get("opacity", 0.025))
             leak_brightness = leak_opacity * 0.12
+            leak_red_gain = 1.0 + leak_opacity * 0.48
+            leak_blue_gain = 1.0 - leak_opacity * 0.24
             chain += (
-                f",colorbalance=rh={leak_opacity}:bh={-leak_opacity * 0.35}:pl=1:"
+                f",colorchannelmixer=rr={leak_red_gain}:bb={leak_blue_gain}:"
                 f"enable='lt(n,{leak_frames})'"
                 f",eq=brightness='if(lt(n,{leak_frames}),"
                 f"{leak_brightness}*(1-n/{leak_frames}),0)':eval=frame"
